@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import openpyxl
 import streamlit as st
 
-from Split import get_column_letter_by_header
+from filesplit import get_column_letter_by_header
 
 
 def _load_uploaded_files(uploaded_files) -> Sequence[Tuple[str, bytes]]:

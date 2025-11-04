@@ -8,21 +8,21 @@ Streamlit application that ingests any consolidated workbook (`.xlsx`) and produ
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-streamlit run Split.py
+streamlit run filesplit.py
 ```
 
 ## Deploy to Streamlit Cloud
 
-1. Commit the project to a public Git repository containing `Split.py`, the `pages/` directory, `requirements.txt`, and optionally the `data/` directory for sample files.
+1. Commit the project to a public Git repository containing `filesplit.py`, the `pages/` directory, `requirements.txt`, and optionally the `data/` directory for sample files.
 2. Visit [https://streamlit.io/cloud](https://streamlit.io/cloud) and click **Deploy an app**.
-3. Select the repository, branch, and set the main file to `Split.py` (or `app.py` if you rename it).
+3. Select the repository, branch, and set the main file to `filesplit.py` (or `app.py` if you rename it).
 4. Confirm the Python version if needed, then click **Deploy**. Streamlit Cloud installs dependencies from `requirements.txt` automatically.
 
 ## Folder Structure
 
 ```
 .
-├── Split.py                   # Main Streamlit page (Split)
+├── filesplit.py               # Main Streamlit page (Split)
 ├── pages/
 │   └── 1_Consolidate.py       # Additional page for merging exports
 ├── requirements.txt
