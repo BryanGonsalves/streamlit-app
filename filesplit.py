@@ -153,7 +153,7 @@ def _create_zip_from_workbooks(workbooks: Dict[str, bytes], prefix: str) -> byte
 
 
 def main() -> None:
-    st.set_page_config(page_title="Team Lead Splitter", page_icon="📄", layout="centered")
+    st.set_page_config(page_title="File Splitter", page_icon="📄", layout="centered")
     st.title("Team Lead Splitter")
     st.write("Enter your consolidated workbook to automatically generate individual files for each selected role.")
 
