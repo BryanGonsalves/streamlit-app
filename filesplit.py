@@ -161,9 +161,8 @@ def main() -> None:
     st.sidebar.write(
         "1. Pick the role to split by and, if desired, set a filename prefix.\n"
         "2. Upload the consolidated workbook (header labels in row 1).\n"
-        "3. Avoid blank rows before the data; every record needs a value.\n"
-        "4. Review the detected names.\n"
-        "5. Download the individual Excel files or the complete zip."
+        "3. Review the detected names.\n"
+        "4. Download the individual Excel files or the complete zip."
     )
 
     default_filter = st.session_state.get("filter_by_mentor", False)
