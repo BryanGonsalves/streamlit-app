@@ -27,6 +27,13 @@ def _canonicalize_lead(name) -> str:
     return CANONICAL_LEAD_ALIASES.get(normalized, stripped)
 
 
+def sanitize_prefix(prefix: str) -> str:
+    """Ensure prefix ends with a single space when provided."""
+    if not prefix:
+        return ""
+    return prefix if prefix.endswith(" ") else f"{prefix} "
+
+
 def get_column_letter_by_header(sheet, header_names) -> Tuple[Optional[str], Optional[int]]:
     """Return the column letter and header row index for the first matching header."""
     if isinstance(header_names, str):
@@ -174,10 +181,9 @@ def main() -> None:
         value="",
         placeholder="e.g., Student Master 2025_Team ",
         help="Prefix added ahead of each generated filename.",
+        key="split_prefix_input",
     )
-    sanitized_prefix = (
-        prefix_input if not prefix_input or prefix_input.endswith(" ") else f"{prefix_input} "
-    )
+    sanitized_prefix = sanitize_prefix(prefix_input)
 
     uploaded_file = st.file_uploader("Upload the consolidated workbook (.xlsx)", type=["xlsx"])
 
