@@ -1,3 +1,4 @@
+from copy import copy
 from io import BytesIO
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -32,14 +33,14 @@ def _append_row_with_style(destination_ws: Worksheet, source_row) -> None:
     dest_row_idx = destination_ws.max_row
     for dest_cell, src_cell in zip(destination_ws[dest_row_idx], source_row):
         if src_cell.has_style:
-            dest_cell.font = src_cell.font
-            dest_cell.border = src_cell.border
-            dest_cell.fill = src_cell.fill
-            dest_cell.number_format = src_cell.number_format
-            dest_cell.protection = src_cell.protection
-            dest_cell.alignment = src_cell.alignment
+            dest_cell.font = copy(src_cell.font)
+            dest_cell.border = copy(src_cell.border)
+            dest_cell.fill = copy(src_cell.fill)
+            dest_cell.number_format = copy(src_cell.number_format)
+            dest_cell.protection = copy(src_cell.protection)
+            dest_cell.alignment = copy(src_cell.alignment)
         dest_cell.hyperlink = src_cell.hyperlink
-        dest_cell.comment = src_cell.comment
+        dest_cell.comment = copy(src_cell.comment) if src_cell.comment else None
 
 
 @st.cache_data(show_spinner=False)
