@@ -159,11 +159,20 @@ def main() -> None:
 
     st.sidebar.header("How to use")
     st.sidebar.write(
-        "1. Upload the consolidated workbook.\n"
-        "2. Ensure the selected header label sits in cell `A1`.\n"
+        "1. Pick the role to split by and, if desired, set a filename prefix.\n"
+        "2. Upload the consolidated workbook (header label in cell `A1`).\n"
         "3. Avoid blank rows before the data; every record needs a value.\n"
         "4. Review the detected names.\n"
         "5. Download the individual Excel files or the complete zip."
+    )
+
+    header_choice = st.toggle("Filter by Mentor instead of Team Lead", value=False)
+    target_header = "Mentor" if header_choice else "Team Lead"
+    prefix = st.text_input(
+        "Optional filename prefix",
+        value="",
+        placeholder="e.g., Student Master 2025_Team ",
+        help="Prefix added ahead of each generated filename.",
     )
 
     uploaded_file = st.file_uploader("Upload the consolidated workbook (.xlsx)", type=["xlsx"])
@@ -176,15 +185,6 @@ def main() -> None:
     if not master_bytes:
         st.error("The uploaded file appears to be empty.")
         return
-
-    header_choice = st.toggle("Filter by Mentor instead of Team Lead", value=False)
-    target_header = "Mentor" if header_choice else "Team Lead"
-    prefix = st.text_input(
-        "Optional filename prefix",
-        value="",
-        placeholder="e.g., Student Master 2025_Team ",
-        help="Prefix added ahead of each generated filename.",
-    )
 
     with st.spinner("Processing workbook..."):
         leads, workbooks, missing_sheets = generate_entity_workbooks(master_bytes, target_header)
