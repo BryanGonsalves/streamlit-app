@@ -154,7 +154,7 @@ def _create_zip_from_workbooks(workbooks: Dict[str, bytes], prefix: str) -> byte
 
 def main() -> None:
     st.set_page_config(page_title="File Splitter", page_icon="📄", layout="centered")
-    st.title("Team Lead Splitter")
+    st.title("File Splitter")
     st.write("Enter your consolidated workbook to automatically generate individual files for each selected role.")
 
     st.sidebar.header("How to use")
@@ -218,7 +218,7 @@ def main() -> None:
         column.download_button(
             label=f"Download {lead}",
             data=workbooks[lead],
-            file_name=f"{prefix} {lead}.xlsx" if prefix else f"{lead}.xlsx",
+            file_name=f"{prefix}' '{lead}.xlsx" if prefix else f"{lead}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_{lead}",
             use_container_width=True,
