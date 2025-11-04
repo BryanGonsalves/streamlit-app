@@ -1,32 +1,31 @@
 from io import BytesIO
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import openpyxl
-from openpyxl.utils import column_index_from_string
 import streamlit as st
 
-from Split import (
-    get_column_letter_by_header,
-    sanitize_prefix,
-    _canonicalize_lead,
-    _create_zip_from_workbooks,
-)
+from Split import get_column_letter_by_header
 
 
-def _load_uploaded_files(uploaded_files) -> List[Tuple[str, bytes]]:
+def _load_uploaded_files(uploaded_files) -> Sequence[Tuple[str, bytes]]:
     """Extract byte content from uploaded files once."""
     buffers: List[Tuple[str, bytes]] = []
     for uploaded in uploaded_files:
         buffers.append((uploaded.name, uploaded.getvalue()))
-    return buffers
+    return tuple(buffers)
 
 
 @st.cache_data(show_spinner=False)
-def consolidate_entity_workbooks(
-    uploaded_files: List[Tuple[str, bytes]], header_label: str
-) -> Tuple[List[str], Dict[str, bytes], Dict[str, List[str]]]:
-    """Return per-entity consolidated workbooks along with missing sheet details."""
-    entity_data: Dict[str, Dict[str, Dict[str, List[List[Optional[object]]]]]] = {}
+def build_consolidated_workbook(
+    uploaded_files: Sequence[Tuple[str, bytes]], header_label: str
+) -> Tuple[Optional[bytes], Dict[str, List[str]], List[str], int]:
+    """
+    Merge the provided workbooks into a single workbook.
+
+    Returns the combined workbook bytes, any sheets missing the target header,
+    the ordered list of sheet names in the output, and the total merged row count.
+    """
+    sheet_data: Dict[str, Dict[str, object]] = {}
     missing_by_file: Dict[str, List[str]] = {}
     header_variants = [header_label, f"{header_label}s"]
 
@@ -39,66 +38,80 @@ def consolidate_entity_workbooks(
                 missing_by_file.setdefault(filename, []).append(sheet_name)
                 continue
 
-            col_index = column_index_from_string(col_letter)
             header_values = [
                 worksheet.cell(row=header_row, column=col).value for col in range(1, worksheet.max_column + 1)
             ]
+            column_count = worksheet.max_column
 
+            sheet_bucket = sheet_data.setdefault(
+                sheet_name,
+                {"header": header_values, "rows": [], "max_cols": column_count},
+            )
+
+            # Expand stored metadata if we encounter more columns in later files.
+            if column_count > sheet_bucket["max_cols"]:
+                diff = column_count - sheet_bucket["max_cols"]
+                sheet_bucket["max_cols"] = column_count
+                sheet_bucket["header"] = header_values
+                for existing_row in sheet_bucket["rows"]:
+                    existing_row.extend([None] * diff)
+
+            max_cols = sheet_bucket["max_cols"]
             for row_index in range(header_row + 1, worksheet.max_row + 1):
-                entity_value = _canonicalize_lead(worksheet.cell(row=row_index, column=col_index).value)
-                if not entity_value:
-                    continue
-
                 row_values = [
-                    worksheet.cell(row=row_index, column=col).value for col in range(1, worksheet.max_column + 1)
+                    worksheet.cell(row=row_index, column=col).value if col <= column_count else None
+                    for col in range(1, max_cols + 1)
                 ]
-
-                sheet_bucket = entity_data.setdefault(entity_value, {}).setdefault(
-                    sheet_name, {"header": header_values, "rows": []}
-                )
+                if all(value is None for value in row_values):
+                    continue
                 sheet_bucket["rows"].append(row_values)
 
         workbook.close()
 
-    sorted_entities = sorted(entity_data.keys())
-    consolidated_workbooks: Dict[str, bytes] = {}
+    if not sheet_data:
+        return None, missing_by_file, [], 0
 
-    for entity, sheets in entity_data.items():
-        output_wb = openpyxl.Workbook()
-        first_sheet = True
-        for sheet_name, payload in sheets.items():
-            if first_sheet:
-                ws_out = output_wb.active
-                ws_out.title = sheet_name
-                first_sheet = False
-            else:
-                ws_out = output_wb.create_sheet(title=sheet_name)
+    sorted_sheet_names = sorted(sheet_data.keys())
+    output_wb = openpyxl.Workbook()
+    first_sheet = True
 
-            ws_out.append(payload["header"])
-            for row in payload["rows"]:
-                ws_out.append(row)
+    for sheet_name in sorted_sheet_names:
+        payload = sheet_data[sheet_name]
+        header = payload["header"]
+        rows = payload["rows"]
 
-        buffer = BytesIO()
-        output_wb.save(buffer)
-        output_wb.close()
-        consolidated_workbooks[entity] = buffer.getvalue()
+        if first_sheet:
+            ws_out = output_wb.active
+            ws_out.title = sheet_name
+            first_sheet = False
+        else:
+            ws_out = output_wb.create_sheet(title=sheet_name)
 
-    return sorted_entities, consolidated_workbooks, missing_by_file
+        ws_out.append(header)
+        for row in rows:
+            ws_out.append(row)
+
+    buffer = BytesIO()
+    output_wb.save(buffer)
+    output_wb.close()
+
+    total_rows = sum(len(payload["rows"]) for payload in sheet_data.values())
+    return buffer.getvalue(), missing_by_file, sorted_sheet_names, total_rows
 
 
 def main():
-    st.title("File Consolidator")
+    st.title("Consolidate")
     st.write(
-        "Combine multiple workbooks and export aggregated files for each Team Lead or Mentor. "
-        "Great for merging prior exports back into a single, curated set."
+        "Combine multiple workbooks into a single file keyed by Team Lead or Mentor. "
+        "Perfect for recreating a master workbook from individual exports."
     )
 
     st.sidebar.header("How to use")
     st.sidebar.write(
-        "1. Choose whether to consolidate by Team Lead or Mentor and set an optional filename prefix.\n"
+        "1. Choose whether to consolidate by Team Lead or Mentor and provide an optional output name.\n"
         "2. Upload one or more workbooks previously exported or structured identically.\n"
         "3. Press **Consolidate files** to merge the data.\n"
-        "4. Review the generated files and download them individually or as a zip."
+        "4. Download the single combined workbook."
     )
 
     default_filter = st.session_state.get("consolidate_filter_by_mentor", False)
@@ -106,27 +119,26 @@ def main():
     filter_by_mentor = st.toggle(toggle_label, value=default_filter, key="consolidate_filter_by_mentor")
     target_header = "Mentor" if filter_by_mentor else "Team Lead"
 
-    prefix_input = st.text_input(
-        "Optional filename prefix",
+    output_name_input = st.text_input(
+        "Output workbook name",
         value="",
-        placeholder="e.g., Consolidated 2025_Team ",
-        help="Prefix added ahead of each generated filename.",
-        key="consolidate_prefix_input",
+        placeholder="e.g., Consolidated September 2025",
+        help="The generated file name will append .xlsx automatically if you omit it.",
+        key="consolidate_output_name",
     )
-    sanitized_prefix = sanitize_prefix(prefix_input)
 
     uploaded_files = st.file_uploader(
         "Upload one or more workbooks (.xlsx) to consolidate", type=["xlsx"], accept_multiple_files=True
     )
 
-    file_buffers: Optional[List[Tuple[str, bytes]]] = None
+    file_buffers: Optional[Sequence[Tuple[str, bytes]]] = None
     result_key = None
     if uploaded_files:
         file_buffers = _load_uploaded_files(uploaded_files)
         result_key = (
-            tuple((name, len(content)) for name, content in file_buffers),
+            file_buffers,
             target_header,
-            sanitized_prefix,
+            output_name_input.strip(),
         )
 
     stored_results = st.session_state.get("consolidation_results")
@@ -141,29 +153,29 @@ def main():
             return
 
         with st.spinner("Consolidating workbooks..."):
-            leads, workbooks, missing_sheets = consolidate_entity_workbooks(file_buffers, target_header)
+            workbook_bytes, missing_sheets, sheet_names, row_count = build_consolidated_workbook(
+                file_buffers, target_header
+            )
 
-        if not leads:
-            st.error(f"No {target_header.lower()}s were found across the uploaded workbooks.")
+        if not workbook_bytes:
+            st.error(
+                f"No {target_header.lower()} data was found across the uploaded workbooks. "
+                "Confirm the selected column header exists."
+            )
             st.session_state.pop("consolidation_results", None)
             return
 
         stored_results = {
-            "leads": leads,
-            "workbooks": workbooks,
+            "workbook": workbook_bytes,
             "missing_sheets": missing_sheets,
+            "sheet_names": sheet_names,
+            "row_count": row_count,
             "target_header": target_header,
-            "prefix": sanitized_prefix,
             "key": result_key,
         }
         st.session_state["consolidation_results"] = stored_results
     elif should_show_results:
         stored_results = st.session_state["consolidation_results"]
-        leads = stored_results["leads"]
-        workbooks = stored_results["workbooks"]
-        missing_sheets = stored_results["missing_sheets"]
-        target_header = stored_results["target_header"]
-        sanitized_prefix = stored_results["prefix"]
     else:
         if not uploaded_files:
             st.session_state.pop("consolidation_results", None)
@@ -174,38 +186,34 @@ def main():
                 st.warning("Inputs changed. Click **Consolidate files** to refresh.")
         return
 
-    if stored_results.get("missing_sheets"):
+    missing_sheets = stored_results.get("missing_sheets", {})
+    if missing_sheets:
         missing_messages = [
-            f"- **{filename}**: {', '.join(sheets)}" for filename, sheets in stored_results["missing_sheets"].items()
+            f"- **{filename}**: {', '.join(sheets)}" for filename, sheets in missing_sheets.items()
         ]
         st.warning(
-            "Some uploaded workbooks did not contain the selected column and were skipped:\n" + "\n".join(missing_messages)
+            "Some uploaded workbooks did not contain the selected column and were skipped:\n"
+            + "\n".join(missing_messages)
         )
 
-    st.success(f"Generated consolidated files for {len(stored_results['leads'])} {target_header.lower()}s.")
-    st.write("Download the combined files below.")
-
-    zip_bytes = _create_zip_from_workbooks(stored_results["workbooks"], sanitized_prefix)
-    st.download_button(
-        label="Download consolidated files as ZIP",
-        data=zip_bytes,
-        file_name=f"consolidated-{target_header.lower().replace(' ', '-')}.zip",
-        mime="application/zip",
-        use_container_width=True,
+    sheet_names = stored_results.get("sheet_names", [])
+    row_count = stored_results.get("row_count", 0)
+    st.success(
+        f"Merged {row_count} rows across {len(sheet_names)} sheet(s) "
+        f"for {target_header.lower()} consolidation."
     )
 
-    st.subheader("Individual downloads")
-    columns = st.columns(2)
-    for index, lead in enumerate(stored_results["leads"]):
-        column = columns[index % len(columns)]
-        column.download_button(
-            label=f"Download {lead}",
-            data=stored_results["workbooks"][lead],
-            file_name=f"{sanitized_prefix}{lead}.xlsx" if sanitized_prefix else f"{lead}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"consolidated_{lead}",
-            use_container_width=True,
-        )
+    output_name = output_name_input.strip() or f"consolidated-{target_header.lower().replace(' ', '-')}"
+    if not output_name.lower().endswith(".xlsx"):
+        output_name += ".xlsx"
+
+    st.download_button(
+        label=f"Download {output_name}",
+        data=stored_results["workbook"],
+        file_name=output_name,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
 
 
 if __name__ == "__main__":
