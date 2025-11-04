@@ -1,10 +1,9 @@
+import zipfile
 from io import BytesIO
 from typing import Dict, List, Optional, Set, Tuple
-import zipfile
 
 import openpyxl
 import streamlit as st
-
 
 CANONICAL_LEAD_ALIASES = {
     "fauziahasansiddiqui": "Fauzia Hasan",
@@ -156,11 +155,9 @@ def main() -> None:
 
     st.sidebar.header("How to use")
     st.sidebar.write(
-        "1. Upload the consolidated workbook.\n"
-        "2. Ensure the header cell `A1` is labeled `Team Lead` (or `Team Leads`).\n"
-        "3. Do not insert blank rows before your data; each role must have a lead value.\n"
-        "4. Review the detected team leads.\n"
-        "5. Download the individual Excel files or the complete zip."
+        "1. Ensure the headers begin in Row 1.\n"
+        "2. Upload the consolidated workbook.\n"
+        "3. Download the individual Excel files or the complete zip."
     )
 
     uploaded_file = st.file_uploader("Upload the consolidated workbook (.xlsx)", type=["xlsx"])
