@@ -143,27 +143,27 @@ def _create_zip_from_workbooks(workbooks: Dict[str, bytes]) -> bytes:
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w") as zip_file:
         for lead, workbook_bytes in workbooks.items():
-            filename = f"Timesheet - {lead}.xlsx"
+            filename = f"{lead}.xlsx"
             zip_file.writestr(filename, workbook_bytes)
     buffer.seek(0)
     return buffer.getvalue()
 
 
 def main() -> None:
-    st.set_page_config(page_title="Team Lead Timesheet Splitter", page_icon="📄", layout="centered")
-    st.title("Team Lead Timesheet Splitter")
-    st.write(
-        "Upload your combined timesheet workbook to automatically generate individual files for each team lead."
-    )
+    st.set_page_config(page_title="Team Lead Splitter", page_icon="📄", layout="centered")
+    st.title("Team Lead Splitter")
+    st.write("Enter your consolidated workbook to automatically generate individual files for each team lead.")
 
     st.sidebar.header("How to use")
     st.sidebar.write(
-        "1. Upload the master timesheet workbook.\n"
-        "2. Review the detected team leads.\n"
-        "3. Download the individual Excel files or the complete zip."
+        "1. Upload the consolidated workbook.\n"
+        "2. Ensure the header cell `A1` is labeled `Team Lead` (or `Team Leads`).\n"
+        "3. Do not insert blank rows before your data; each role must have a lead value.\n"
+        "4. Review the detected team leads.\n"
+        "5. Download the individual Excel files or the complete zip."
     )
 
-    uploaded_file = st.file_uploader("Upload the master timesheet (.xlsx)", type=["xlsx"])
+    uploaded_file = st.file_uploader("Upload the consolidated workbook (.xlsx)", type=["xlsx"])
 
     if uploaded_file is None:
         st.info("Start by uploading an Excel workbook.")
@@ -192,9 +192,9 @@ def main() -> None:
 
     zip_bytes = _create_zip_from_workbooks(workbooks)
     st.download_button(
-        label="Download all timesheets as ZIP",
+        label="Download all workbooks as ZIP",
         data=zip_bytes,
-        file_name="team-lead-timesheets.zip",
+        file_name="team-lead-workbooks.zip",
         mime="application/zip",
         use_container_width=True,
     )
@@ -204,9 +204,9 @@ def main() -> None:
     for index, lead in enumerate(leads):
         column = columns[index % len(columns)]
         column.download_button(
-            label=f"Download Timesheet - {lead}",
+            label=f"Download {lead}",
             data=workbooks[lead],
-            file_name=f"Timesheet - {lead}.xlsx",
+            file_name=f"{lead}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_{lead}",
             use_container_width=True,

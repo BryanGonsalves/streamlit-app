@@ -1,6 +1,6 @@
-# Team Lead Timesheet Splitter
+# Team Lead Splitter
 
-Streamlit application that ingests a combined timesheet workbook (`.xlsx`) and produces downloadable Excel files—one per team lead—plus a zipped bundle for convenience. The app automatically skips sheets that lack a `Team Lead` column and normalizes common aliases.
+Streamlit application that ingests any consolidated workbook (`.xlsx`) and produces downloadable Excel files—one per team lead—plus a zipped bundle for convenience. The app automatically skips sheets that lack a `Team Lead` column and normalizes common aliases.
 
 ## Run Locally
 
