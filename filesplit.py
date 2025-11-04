@@ -160,7 +160,7 @@ def main() -> None:
     st.sidebar.header("How to use")
     st.sidebar.write(
         "1. Pick the role to split by and, if desired, set a filename prefix.\n"
-        "2. Upload the consolidated workbook (header label in cell `A1`).\n"
+        "2. Upload the consolidated workbook (header labels in row 1).\n"
         "3. Avoid blank rows before the data; every record needs a value.\n"
         "4. Review the detected names.\n"
         "5. Download the individual Excel files or the complete zip."
@@ -218,7 +218,7 @@ def main() -> None:
         column.download_button(
             label=f"Download {lead}",
             data=workbooks[lead],
-            file_name=f"{prefix}{lead}.xlsx" if prefix else f"{lead}.xlsx",
+            file_name=f"{prefix} {lead}.xlsx" if prefix else f"{lead}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_{lead}",
             use_container_width=True,
