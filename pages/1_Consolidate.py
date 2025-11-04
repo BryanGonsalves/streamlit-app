@@ -2,6 +2,7 @@ from io import BytesIO
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import openpyxl
+from openpyxl.worksheet.worksheet import Worksheet
 import streamlit as st
 
 from filesplit import get_column_letter_by_header
@@ -15,88 +16,108 @@ def _load_uploaded_files(uploaded_files) -> Sequence[Tuple[str, bytes]]:
     return tuple(buffers)
 
 
+def _last_data_row(ws: Worksheet, header_row: int) -> int:
+    """Find the last row containing data below the header."""
+    for row_idx in range(ws.max_row, header_row, -1):
+        for cell in ws[row_idx]:
+            if cell.value not in (None, ""):
+                return row_idx
+    return header_row
+
+
+def _append_row_with_style(destination_ws: Worksheet, source_row) -> None:
+    """Append a row to destination_ws copying both values and styles."""
+    values = [cell.value for cell in source_row]
+    destination_ws.append(values)
+    dest_row_idx = destination_ws.max_row
+    for dest_cell, src_cell in zip(destination_ws[dest_row_idx], source_row):
+        if src_cell.has_style:
+            dest_cell.font = src_cell.font
+            dest_cell.border = src_cell.border
+            dest_cell.fill = src_cell.fill
+            dest_cell.number_format = src_cell.number_format
+            dest_cell.protection = src_cell.protection
+            dest_cell.alignment = src_cell.alignment
+        dest_cell.hyperlink = src_cell.hyperlink
+        dest_cell.comment = src_cell.comment
+
+
 @st.cache_data(show_spinner=False)
 def build_consolidated_workbook(
     uploaded_files: Sequence[Tuple[str, bytes]], header_label: str
-) -> Tuple[Optional[bytes], Dict[str, List[str]], List[str], int]:
+) -> Tuple[Optional[bytes], Dict[str, List[str]], int]:
     """
     Merge the provided workbooks into a single workbook.
 
     Returns the combined workbook bytes, any sheets missing the target header,
-    the ordered list of sheet names in the output, and the total merged row count.
+    and the total merged row count.
     """
-    sheet_data: Dict[str, Dict[str, object]] = {}
-    missing_by_file: Dict[str, List[str]] = {}
-    header_variants = [header_label, f"{header_label}s"]
+    if not uploaded_files:
+        return None, {}, 0
 
-    for filename, file_bytes in uploaded_files:
+    header_variants = [header_label, f"{header_label}s"]
+    missing_by_file: Dict[str, List[str]] = {}
+
+    base_name, base_bytes = uploaded_files[0]
+    base_wb = openpyxl.load_workbook(BytesIO(base_bytes))
+    sheet_header_rows: Dict[str, int] = {}
+
+    for sheet_name in base_wb.sheetnames:
+        ws = base_wb[sheet_name]
+        col_letter, header_row = get_column_letter_by_header(ws, header_variants)
+        if not col_letter:
+            missing_by_file.setdefault(base_name, []).append(sheet_name)
+            continue
+        sheet_header_rows[sheet_name] = header_row
+
+    total_rows = 0
+
+    # Count rows already present in the base workbook
+    for sheet_name, header_row in sheet_header_rows.items():
+        ws = base_wb[sheet_name]
+        total_rows += max(0, _last_data_row(ws, header_row) - header_row)
+
+    # Process additional workbooks
+    for filename, file_bytes in uploaded_files[1:]:
         workbook = openpyxl.load_workbook(BytesIO(file_bytes))
         for sheet_name in workbook.sheetnames:
-            worksheet = workbook[sheet_name]
-            col_letter, header_row = get_column_letter_by_header(worksheet, header_variants)
+            ws_src = workbook[sheet_name]
+            col_letter, header_row = get_column_letter_by_header(ws_src, header_variants)
             if not col_letter:
                 missing_by_file.setdefault(filename, []).append(sheet_name)
                 continue
 
-            header_values = [
-                worksheet.cell(row=header_row, column=col).value for col in range(1, worksheet.max_column + 1)
-            ]
-            column_count = worksheet.max_column
+            if sheet_name not in sheet_header_rows:
+                # Create the sheet in the base workbook copying header row and styles.
+                ws_dest = base_wb.create_sheet(title=sheet_name)
+                sheet_header_rows[sheet_name] = header_row
+                header_row_cells = ws_src[header_row]
+                _append_row_with_style(ws_dest, header_row_cells)
+                # Ensure rows below header start empty
+                ws_dest.delete_rows(sheet_header_rows[sheet_name] + 1, ws_dest.max_row - sheet_header_rows[sheet_name])
+            else:
+                ws_dest = base_wb[sheet_name]
 
-            sheet_bucket = sheet_data.setdefault(
-                sheet_name,
-                {"header": header_values, "rows": [], "max_cols": column_count},
-            )
+            dest_header_row = sheet_header_rows[sheet_name]
+            last_row = _last_data_row(ws_dest, dest_header_row)
 
-            # Expand stored metadata if we encounter more columns in later files.
-            if column_count > sheet_bucket["max_cols"]:
-                diff = column_count - sheet_bucket["max_cols"]
-                sheet_bucket["max_cols"] = column_count
-                sheet_bucket["header"] = header_values
-                for existing_row in sheet_bucket["rows"]:
-                    existing_row.extend([None] * diff)
-
-            max_cols = sheet_bucket["max_cols"]
-            for row_index in range(header_row + 1, worksheet.max_row + 1):
-                row_values = [
-                    worksheet.cell(row=row_index, column=col).value if col <= column_count else None
-                    for col in range(1, max_cols + 1)
-                ]
-                if all(value is None for value in row_values):
+            for row_idx in range(header_row + 1, ws_src.max_row + 1):
+                source_row = ws_src[row_idx]
+                if all(cell.value in (None, "") for cell in source_row):
                     continue
-                sheet_bucket["rows"].append(row_values)
+                _append_row_with_style(ws_dest, source_row)
+                total_rows += 1
 
+            # Ensure we preserve spacing: remove unintended blank rows between header and data
+            if last_row == dest_header_row and ws_dest.max_row > dest_header_row:
+                pass  # header only previously, nothing to clean
         workbook.close()
 
-    if not sheet_data:
-        return None, missing_by_file, [], 0
-
-    sorted_sheet_names = sorted(sheet_data.keys())
-    output_wb = openpyxl.Workbook()
-    first_sheet = True
-
-    for sheet_name in sorted_sheet_names:
-        payload = sheet_data[sheet_name]
-        header = payload["header"]
-        rows = payload["rows"]
-
-        if first_sheet:
-            ws_out = output_wb.active
-            ws_out.title = sheet_name
-            first_sheet = False
-        else:
-            ws_out = output_wb.create_sheet(title=sheet_name)
-
-        ws_out.append(header)
-        for row in rows:
-            ws_out.append(row)
-
     buffer = BytesIO()
-    output_wb.save(buffer)
-    output_wb.close()
+    base_wb.save(buffer)
+    base_wb.close()
 
-    total_rows = sum(len(payload["rows"]) for payload in sheet_data.values())
-    return buffer.getvalue(), missing_by_file, sorted_sheet_names, total_rows
+    return buffer.getvalue(), missing_by_file, total_rows
 
 
 def main():
@@ -153,7 +174,7 @@ def main():
             return
 
         with st.spinner("Consolidating workbooks..."):
-            workbook_bytes, missing_sheets, sheet_names, row_count = build_consolidated_workbook(
+            workbook_bytes, missing_sheets, row_count = build_consolidated_workbook(
                 file_buffers, target_header
             )
 
@@ -168,7 +189,6 @@ def main():
         stored_results = {
             "workbook": workbook_bytes,
             "missing_sheets": missing_sheets,
-            "sheet_names": sheet_names,
             "row_count": row_count,
             "target_header": target_header,
             "key": result_key,
@@ -196,10 +216,9 @@ def main():
             + "\n".join(missing_messages)
         )
 
-    sheet_names = stored_results.get("sheet_names", [])
     row_count = stored_results.get("row_count", 0)
     st.success(
-        f"Merged {row_count} rows across {len(sheet_names)} sheet(s) "
+        f"Merged {row_count} row(s) across all sheets "
         f"for {target_header.lower()} consolidation."
     )
 
