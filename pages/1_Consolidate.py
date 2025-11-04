@@ -5,7 +5,7 @@ import openpyxl
 from openpyxl.utils import column_index_from_string
 import streamlit as st
 
-from filesplit import (
+from Split import (
     get_column_letter_by_header,
     sanitize_prefix,
     _canonicalize_lead,
