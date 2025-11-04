@@ -1,4 +1,4 @@
-# Team Lead Splitter
+# File Splitter
 
 Streamlit application that ingests any consolidated workbook (`.xlsx`) and produces downloadable Excel files—one per Team Lead or Mentor—plus a zipped bundle for convenience. The app automatically skips sheets that lack the selected header, normalizes common aliases, and lets you prepend a custom prefix to each exported filename.
 
