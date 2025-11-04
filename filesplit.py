@@ -166,8 +166,10 @@ def main() -> None:
         "5. Download the individual Excel files or the complete zip."
     )
 
-    header_choice = st.toggle("Filter by Mentor instead of Team Lead", value=False)
-    target_header = "Mentor" if header_choice else "Team Lead"
+    default_filter = st.session_state.get("filter_by_mentor", False)
+    toggle_label = f"Filter by {'Mentor' if default_filter else 'Team Lead'}"
+    filter_by_mentor = st.toggle(toggle_label, value=default_filter, key="filter_by_mentor")
+    target_header = "Mentor" if filter_by_mentor else "Team Lead"
     prefix = st.text_input(
         "Optional filename prefix",
         value="",
