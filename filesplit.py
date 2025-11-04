@@ -169,31 +169,77 @@ def main() -> None:
     toggle_label = f"Filter by {'Mentor' if default_filter else 'Team Lead'}"
     filter_by_mentor = st.toggle(toggle_label, value=default_filter, key="filter_by_mentor")
     target_header = "Mentor" if filter_by_mentor else "Team Lead"
-    prefix = st.text_input(
+    prefix_input = st.text_input(
         "Optional filename prefix",
         value="",
         placeholder="e.g., Student Master 2025_Team ",
         help="Prefix added ahead of each generated filename.",
     )
+    sanitized_prefix = (
+        prefix_input if not prefix_input or prefix_input.endswith(" ") else f"{prefix_input} "
+    )
 
     uploaded_file = st.file_uploader("Upload the consolidated workbook (.xlsx)", type=["xlsx"])
 
+    master_bytes = uploaded_file.getvalue() if uploaded_file is not None else None
+    result_key = None
+    if master_bytes is not None:
+        result_key = (
+            uploaded_file.name,
+            len(master_bytes),
+            target_header,
+            sanitized_prefix,
+        )
+
+    stored_results = st.session_state.get("split_results")
+    should_show_results = stored_results is not None and stored_results.get("key") == result_key
+
     submitted = st.button("Generate files", use_container_width=True)
 
-    if uploaded_file is None or not submitted:
+    if submitted:
+        if master_bytes is None:
+            st.error("Upload an Excel workbook before generating files.")
+            st.session_state.pop("split_results", None)
+            return
+        if not master_bytes:
+            st.error("The uploaded file appears to be empty.")
+            st.session_state.pop("split_results", None)
+            return
+
+        with st.spinner("Processing workbook..."):
+            leads, workbooks, missing_sheets = generate_entity_workbooks(master_bytes, target_header)
+
+        if not leads:
+            st.error(f"No {target_header.lower()}s were found in the uploaded workbook.")
+            st.session_state.pop("split_results", None)
+            return
+
+        stored_results = {
+            "leads": leads,
+            "workbooks": workbooks,
+            "missing_sheets": missing_sheets,
+            "target_header": target_header,
+            "prefix": sanitized_prefix,
+            "key": result_key,
+        }
+        st.session_state["split_results"] = stored_results
+        sanitized_prefix = stored_results["prefix"]
+    elif should_show_results:
+        stored_results = st.session_state["split_results"]
+        leads = stored_results["leads"]
+        workbooks = stored_results["workbooks"]
+        missing_sheets = stored_results["missing_sheets"]
+        target_header = stored_results["target_header"]
+        sanitized_prefix = stored_results["prefix"]
+    else:
         if uploaded_file is None:
+            st.session_state.pop("split_results", None)
             st.info("Start by uploading an Excel workbook.")
         else:
             st.info("Click **Generate files** to process the workbook.")
+            if stored_results and stored_results.get("key") != result_key:
+                st.warning("Inputs changed. Click **Generate files** to refresh.")
         return
-
-    master_bytes = uploaded_file.getvalue()
-    if not master_bytes:
-        st.error("The uploaded file appears to be empty.")
-        return
-
-    with st.spinner("Processing workbook..."):
-        leads, workbooks, missing_sheets = generate_entity_workbooks(master_bytes, target_header)
 
     if missing_sheets:
         st.warning(
@@ -208,8 +254,7 @@ def main() -> None:
     st.success(f"Found {len(leads)} {target_header.lower()}s.")
     st.write("Download the generated files below.")
 
-    sanitized_prefix = prefix if not prefix or prefix.endswith(" ") else f"{prefix} "
-    zip_bytes = _create_zip_from_workbooks(workbooks, sanitized_prefix if prefix else "")
+    zip_bytes = _create_zip_from_workbooks(workbooks, sanitized_prefix)
     st.download_button(
         label="Download all workbooks as ZIP",
         data=zip_bytes,
@@ -225,7 +270,7 @@ def main() -> None:
         column.download_button(
             label=f"Download {lead}",
             data=workbooks[lead],
-            file_name=f"{sanitized_prefix}{lead}.xlsx" if prefix else f"{lead}.xlsx",
+            file_name=f"{sanitized_prefix}{lead}.xlsx" if sanitized_prefix else f"{lead}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_{lead}",
             use_container_width=True,
