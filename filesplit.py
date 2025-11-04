@@ -57,17 +57,21 @@ def get_column_letter_by_header(sheet, header_names) -> Tuple[Optional[str], Opt
 
 
 @st.cache_data(show_spinner=False)
-def generate_lead_workbooks(master_file_bytes: bytes) -> Tuple[List[str], Dict[str, bytes], List[str]]:
-    """Return the sorted team leads, workbook bytes per lead, and sheets lacking the column."""
+def generate_entity_workbooks(
+    master_file_bytes: bytes, header_label: str
+) -> Tuple[List[str], Dict[str, bytes], List[str]]:
+    """Return the sorted entity names, workbook bytes per entity, and sheets lacking the column."""
     original_wb = openpyxl.load_workbook(BytesIO(master_file_bytes))
     sheet_names = original_wb.sheetnames
 
-    team_leads: Set[str] = set()
+    entity_names: Set[str] = set()
     missing_sheets: List[str] = []
+
+    header_variants = [header_label, f"{header_label}s"]
 
     for sheet_name in sheet_names:
         ws = original_wb[sheet_name]
-        col_letter, header_row = get_column_letter_by_header(ws, ["Team Lead", "Team Leads"])
+        col_letter, header_row = get_column_letter_by_header(ws, header_variants)
         if not col_letter:
             missing_sheets.append(sheet_name)
             continue
@@ -79,23 +83,23 @@ def generate_lead_workbooks(master_file_bytes: bytes) -> Tuple[List[str], Dict[s
 
             lead_name = _canonicalize_lead(val)
             if lead_name:
-                team_leads.add(lead_name)
+                entity_names.add(lead_name)
 
-    sorted_leads = sorted(team_leads)
+    sorted_entities = sorted(entity_names)
     original_wb.close()
 
-    if not sorted_leads:
+    if not sorted_entities:
         return [], {}, missing_sheets
 
     workbooks: Dict[str, bytes] = {}
-    for lead in sorted_leads:
+    for lead in sorted_entities:
         wb_copy = openpyxl.load_workbook(BytesIO(master_file_bytes))
 
         for sheet_name in sheet_names:
             ws_copy = wb_copy[sheet_name]
-            col_letter, header_row = get_column_letter_by_header(ws_copy, ["Team Lead", "Team Leads"])
+            col_letter, header_row = get_column_letter_by_header(ws_copy, header_variants)
             if not col_letter:
-                continue  # Skip sheet if no Team Lead column
+                continue  # Skip sheet if no target column
 
             # Loop bottom-up to delete rows not matching this lead
             rows_to_delete = []
@@ -134,15 +138,15 @@ def generate_lead_workbooks(master_file_bytes: bytes) -> Tuple[List[str], Dict[s
         wb_copy.close()
         workbooks[lead] = buffer.getvalue()
 
-    return sorted_leads, workbooks, missing_sheets
+    return sorted_entities, workbooks, missing_sheets
 
 
-def _create_zip_from_workbooks(workbooks: Dict[str, bytes]) -> bytes:
+def _create_zip_from_workbooks(workbooks: Dict[str, bytes], prefix: str) -> bytes:
     """Package generated workbooks into a zip archive."""
     buffer = BytesIO()
     with zipfile.ZipFile(buffer, "w") as zip_file:
         for lead, workbook_bytes in workbooks.items():
-            filename = f"{lead}.xlsx"
+            filename = f"{prefix}{lead}.xlsx" if prefix else f"{lead}.xlsx"
             zip_file.writestr(filename, workbook_bytes)
     buffer.seek(0)
     return buffer.getvalue()
@@ -151,13 +155,15 @@ def _create_zip_from_workbooks(workbooks: Dict[str, bytes]) -> bytes:
 def main() -> None:
     st.set_page_config(page_title="Team Lead Splitter", page_icon="📄", layout="centered")
     st.title("Team Lead Splitter")
-    st.write("Enter your consolidated workbook to automatically generate individual files for each team lead.")
+    st.write("Enter your consolidated workbook to automatically generate individual files for each selected role.")
 
     st.sidebar.header("How to use")
     st.sidebar.write(
-        "1. Ensure the headers begin in Row 1.\n"
-        "2. Upload the consolidated workbook.\n"
-        "3. Download the individual Excel files or the complete zip."
+        "1. Upload the consolidated workbook.\n"
+        "2. Ensure the selected header label sits in cell `A1`.\n"
+        "3. Avoid blank rows before the data; every record needs a value.\n"
+        "4. Review the detected names.\n"
+        "5. Download the individual Excel files or the complete zip."
     )
 
     uploaded_file = st.file_uploader("Upload the consolidated workbook (.xlsx)", type=["xlsx"])
@@ -171,27 +177,36 @@ def main() -> None:
         st.error("The uploaded file appears to be empty.")
         return
 
-    with st.spinner("Processing timesheets..."):
-        leads, workbooks, missing_sheets = generate_lead_workbooks(master_bytes)
+    header_choice = st.toggle("Filter by Mentor instead of Team Lead", value=False)
+    target_header = "Mentor" if header_choice else "Team Lead"
+    prefix = st.text_input(
+        "Optional filename prefix",
+        value="",
+        placeholder="e.g., Student Master 2025_Team ",
+        help="Prefix added ahead of each generated filename.",
+    )
+
+    with st.spinner("Processing workbook..."):
+        leads, workbooks, missing_sheets = generate_entity_workbooks(master_bytes, target_header)
 
     if missing_sheets:
         st.warning(
-            "The following sheets do not contain a 'Team Lead' column and were skipped: "
+            f"The following sheets do not contain a '{target_header}' column and were skipped: "
             + ", ".join(missing_sheets)
         )
 
     if not leads:
-        st.error("No team leads were found in the uploaded workbook.")
+        st.error(f"No {target_header.lower()}s were found in the uploaded workbook.")
         return
 
-    st.success(f"Found {len(leads)} team leads.")
+    st.success(f"Found {len(leads)} {target_header.lower()}s.")
     st.write("Download the generated files below.")
 
-    zip_bytes = _create_zip_from_workbooks(workbooks)
+    zip_bytes = _create_zip_from_workbooks(workbooks, prefix)
     st.download_button(
         label="Download all workbooks as ZIP",
         data=zip_bytes,
-        file_name="team-lead-workbooks.zip",
+        file_name=f"{target_header.lower().replace(' ', '-')}-workbooks.zip",
         mime="application/zip",
         use_container_width=True,
     )
@@ -203,7 +218,7 @@ def main() -> None:
         column.download_button(
             label=f"Download {lead}",
             data=workbooks[lead],
-            file_name=f"{lead}.xlsx",
+            file_name=f"{prefix}{lead}.xlsx" if prefix else f"{lead}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_{lead}",
             use_container_width=True,
