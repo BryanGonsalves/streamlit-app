@@ -3,8 +3,8 @@ from io import BytesIO
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import openpyxl
-from openpyxl.worksheet.worksheet import Worksheet
 import streamlit as st
+from openpyxl.worksheet.worksheet import Worksheet
 
 from filesplit import get_column_letter_by_header
 
@@ -131,7 +131,7 @@ def main():
     st.sidebar.header("How to use")
     st.sidebar.write(
         "1. Choose whether to consolidate by Team Lead or Mentor and provide an optional output name.\n"
-        "2. Upload one or more workbooks previously exported or structured identically.\n"
+        "2. Upload one or more workbooks structured identically.\n"
         "3. Press **Consolidate files** to merge the data.\n"
         "4. Download the single combined workbook."
     )
