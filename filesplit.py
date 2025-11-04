@@ -208,7 +208,8 @@ def main() -> None:
     st.success(f"Found {len(leads)} {target_header.lower()}s.")
     st.write("Download the generated files below.")
 
-    zip_bytes = _create_zip_from_workbooks(workbooks, prefix)
+    sanitized_prefix = prefix if not prefix or prefix.endswith(" ") else f"{prefix} "
+    zip_bytes = _create_zip_from_workbooks(workbooks, sanitized_prefix if prefix else "")
     st.download_button(
         label="Download all workbooks as ZIP",
         data=zip_bytes,
@@ -224,7 +225,7 @@ def main() -> None:
         column.download_button(
             label=f"Download {lead}",
             data=workbooks[lead],
-            file_name=f"{prefix}{lead}.xlsx" if prefix else f"{lead}.xlsx",
+            file_name=f"{sanitized_prefix}{lead}.xlsx" if prefix else f"{lead}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_{lead}",
             use_container_width=True,
