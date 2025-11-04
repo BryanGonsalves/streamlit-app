@@ -161,8 +161,8 @@ def main() -> None:
     st.sidebar.write(
         "1. Pick the role to split by and, if desired, set a filename prefix.\n"
         "2. Upload the consolidated workbook (header labels in row 1).\n"
-        "3. Review the detected names.\n"
-        "4. Download the individual Excel files or the complete zip."
+        "3. Press **Generate files** to process the workbook.\n"
+        "4. Review the detected names and download the outputs."
     )
 
     default_filter = st.session_state.get("filter_by_mentor", False)
@@ -178,8 +178,13 @@ def main() -> None:
 
     uploaded_file = st.file_uploader("Upload the consolidated workbook (.xlsx)", type=["xlsx"])
 
-    if uploaded_file is None:
-        st.info("Start by uploading an Excel workbook.")
+    submitted = st.button("Generate files", use_container_width=True)
+
+    if uploaded_file is None or not submitted:
+        if uploaded_file is None:
+            st.info("Start by uploading an Excel workbook.")
+        else:
+            st.info("Click **Generate files** to process the workbook.")
         return
 
     master_bytes = uploaded_file.getvalue()
@@ -219,7 +224,7 @@ def main() -> None:
         column.download_button(
             label=f"Download {lead}",
             data=workbooks[lead],
-            file_name=f"{prefix}{ lead}.xlsx" if prefix else f"{lead}.xlsx",
+            file_name=f"{prefix}{lead}.xlsx" if prefix else f"{lead}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"download_{lead}",
             use_container_width=True,
